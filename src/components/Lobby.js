@@ -26,6 +26,13 @@ const Lobby = ({ createGame, joinGame }) => {
                     className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-xl transition-colors duration-200 shadow-lg transform hover:scale-105"
                     onClick={() => createGame('draw_and_guess', true)}
                 >
+                    أنشئ غرفة
+                </button>
+                <p className="text-lg font-semibold text-gray-300 mt-6 mb-2">لعبة "ذئب الفضاء"</p>
+                 <button
+                    className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-xl transition-colors duration-200 shadow-lg transform hover:scale-105"
+                    onClick={() => createGame('space_werewolf', true)}
+                >
                     أنشئ غرفة (قريباً)
                 </button>
 
