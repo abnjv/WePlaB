@@ -4,8 +4,14 @@ import { avatars } from '../App';
 export const GameContext = createContext();
 
 export const initialState = {
+    // Space Werewolf State
+    playerLocations: {}, // { [userId]: { x: number, y: number } }
+    playerRoles: {}, // { [userId]: 'crewmate' | 'impostor' }
+    tasks: [], // { id: string, location: { x, y }, status: 'incomplete' | 'complete' }[]
+    isMeetingActive: false,
+
     // Draw & Guess State
-    gameType: 'who_is_the_spy', // 'who_is_the_spy' or 'draw_and_guess'
+    gameType: 'who_is_the_spy', // 'who_is_the_spy', 'draw_and_guess', or 'space_werewolf'
     currentDrawerId: null,
     wordToDraw: '',
     drawingData: [],
@@ -136,6 +142,27 @@ export const gameReducer = (state, action) => {
                 drawingData: [],
                 guesses: []
             };
+
+        // Space Werewolf Actions
+        case 'SET_PLAYER_ROLES':
+            return { ...state, playerRoles: action.payload };
+        case 'UPDATE_PLAYER_LOCATION':
+            return {
+                ...state,
+                playerLocations: {
+                    ...state.playerLocations,
+                    [action.payload.userId]: action.payload.location
+                }
+            };
+        case 'COMPLETE_TASK':
+            return {
+                ...state,
+                tasks: state.tasks.map(task =>
+                    task.id === action.payload.taskId ? { ...task, status: 'complete' } : task
+                )
+            };
+        case 'SET_MEETING_STATUS':
+            return { ...state, isMeetingActive: action.payload };
 
         default:
             return state;

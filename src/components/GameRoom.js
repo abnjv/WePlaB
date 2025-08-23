@@ -5,6 +5,7 @@ import Chat from './Chat';
 import GameLog from './GameLog';
 import GameArea from './GameArea'; // For "Who is the Spy?"
 import DrawAndGuess from './DrawAndGuess'; // For "Draw & Guess"
+import SpaceWerewolf from './SpaceWerewolf'; // For "Space Werewolf"
 
 const GameRoom = (props) => {
     const { state } = useContext(GameContext);
@@ -16,6 +17,8 @@ const GameRoom = (props) => {
                 return <GameArea {...props} />;
             case 'draw_and_guess':
                 return <DrawAndGuess {...props} />;
+            case 'space_werewolf':
+                return <SpaceWerewolf {...props} />;
             default:
                 return <div>Error: Unknown game type!</div>;
         }
