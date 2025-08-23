@@ -12,6 +12,7 @@ import { GameContext } from './context/GameContext';
 import VoiceChat from './components/VoiceChat';
 import AudioRenderer from './components/AudioRenderer';
 import { useMovement } from './hooks/useMovement';
+import TaskModal from './components/TaskModal';
 
 // DO NOT change these variables. They are provided by the environment.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -22,7 +23,13 @@ const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial
 export const gameWords = { 'مدينة': 'عاصمة', 'حيوان': 'طائر', 'فاكهة': 'خضروات', 'أداة': 'آلة', 'رياضة': 'هواية', 'مهنة': 'وظيفة', 'مشروب': 'سائل', 'فيلم': 'مسلسل', 'كوكب': 'قمر', 'لعبة': 'رياضة', 'عملة': 'بضاعة', 'طعام': 'بهار', 'مركبة': 'وسيلة نقل', 'معدن': 'عنصر', 'سلاح': 'دفاع' };
 export const words = Object.keys(gameWords);
 export const drawAndGuessWords = ['سيارة', 'شجرة', 'منزل', 'قطة', 'كلب', 'شمس', 'قمر', 'نجمة', 'كتاب', 'قلم', 'طاولة', 'كرسي', 'هاتف', 'حاسوب', 'مفتاح', 'باب', 'نافذة', 'ساعة', 'نظارة', 'كرة'];
-export const spaceWerewolfTasks = [{ id: 'task1', name: 'إصلاح الأسلاك', location: { x: 10, y: 20 } }, { id: 'task2', name: 'تنزيل البيانات', location: { x: 80, y: 50 } }, { id: 'task3', name: 'تفعيل الدروع', location: { x: 50, y: 80 } }, { id: 'task4', name: 'تفريغ القمامة', location: { x: 20, y: 70 } }, { id: 'task5', name: 'مسح الكويكبات', location: { x: 90, y: 10 } }];
+export const spaceWerewolfTasks = [
+    { id: 'task1', name: 'إصلاح الأسلاك', room: 'Engine Room', location: { x: 20, y: 85 } },
+    { id: 'task2', name: 'تنزيل البيانات', room: 'Cafeteria', location: { x: 50, y: 15 } },
+    { id: 'task3', name: 'تفعيل الدروع', room: 'Security', location: { x: 80, y: 85 } },
+    { id: 'task4', name: 'تفريغ القمامة', room: 'Cafeteria', location: { x: 60, y: 15 } },
+    { id: 'task5', name: 'فحص طبي', room: 'MedBay', location: { x: 80, y: 15 } },
+];
 export const avatars = ['😊', '😎', '🤩', '🥳', '🤓', '🤖', '👻', '👽', '👑'];
 const DISCUSSION_TIMER = 120;
 const VOTING_TIMER = 30;
@@ -309,6 +316,82 @@ const App = () => {
     const viewMyWord = async () => {};
     const getPlayerNameById = (id) => gameData?.players?.find(p => p.id === id)?.name || id.substring(0, 4);
 
+    const checkWinConditions = async () => {
+        // This is a simplified check. A real implementation would be more robust.
+        if (gameData.gameType === 'space_werewolf') {
+            const alivePlayers = gameData.players.filter(p => !p.isEjected);
+            const aliveImpostors = alivePlayers.filter(p => gameData.playerRoles[p.id] === 'impostor');
+            const aliveCrewmates = alivePlayers.filter(p => gameData.playerRoles[p.id] === 'crewmate');
+
+            if (aliveImpostors.length === 0) {
+                await updateGameLog('All impostors have been ejected! Crewmates win!');
+                await endGame();
+            } else if (aliveImpostors.length >= aliveCrewmates.length) {
+                await updateGameLog('Impostors have taken over! Impostors win!');
+                await endGame();
+            }
+            // Add task completion check later
+        }
+    };
+
+    const voteToEject = async (votedPlayerId) => {
+        if (!db || !currentRoomId || !gameData.isMeetingActive) return;
+
+        const roomDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'gameRooms', currentRoomId);
+        try {
+            await runTransaction(db, async (transaction) => {
+                const roomSnap = await transaction.get(roomDocRef);
+                if (!roomSnap.exists()) throw new Error("Room does not exist!");
+
+                const roomData = roomSnap.data();
+                const votes = roomData.meetingVotes || {};
+
+                if (votes[userId]) return; // Already voted
+
+                votes[userId] = votedPlayerId;
+                transaction.update(roomDocRef, { meetingVotes: votes });
+
+                if (Object.keys(votes).length === roomData.players.length) {
+                    const voteCounts = {};
+                    Object.values(votes).forEach(votedId => { voteCounts[votedId] = (voteCounts[votedId] || 0) + 1; });
+
+                    let maxVotes = 0;
+                    let playersToEject = [];
+                    for (const playerId in voteCounts) {
+                        if (voteCounts[playerId] > maxVotes) {
+                            maxVotes = voteCounts[playerId];
+                            playersToEject = [playerId];
+                        } else if (voteCounts[playerId] === maxVotes) {
+                            playersToEject.push(playerId);
+                        }
+                    }
+
+                    let ejectedPlayerId = null;
+                    if (playersToEject.length === 1) {
+                        ejectedPlayerId = playersToEject[0];
+                    }
+
+                    // In case of a tie, nobody is ejected.
+                    const updatedPlayers = roomData.players.map(p =>
+                        p.id === ejectedPlayerId ? { ...p, isEjected: true } : p
+                    );
+
+                    transaction.update(roomDocRef, {
+                        isMeetingActive: false,
+                        players: updatedPlayers,
+                        meetingVotes: {} // Reset for next meeting
+                    });
+                }
+            });
+
+            // Check for win conditions after the vote
+            await checkWinConditions();
+
+        } catch (error) {
+            console.error("Error voting to eject:", error);
+        }
+    };
+
     const callEmergencyMeeting = async () => {
         if (!db || !currentRoomId) return;
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'gameRooms', currentRoomId), {
@@ -386,6 +469,7 @@ const App = () => {
                     }}
                 />
             )}
+            <TaskModal completeTask={completeTask} />
             <div className="h-full w-full">
                 {!currentRoomId ? (
                     <div className="flex items-center justify-center h-full p-4">
@@ -401,6 +485,7 @@ const App = () => {
                             removePlayer={removePlayer} handleSendMessage={handleSendMessage}
                             completeTask={completeTask}
                             callEmergencyMeeting={callEmergencyMeeting}
+                            voteToEject={voteToEject}
                             messagesEndRef={messagesEndRef} gameLogRef={gameLogRef}
                             getPlayerNameById={getPlayerNameById}
                         />
