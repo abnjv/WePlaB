@@ -3,8 +3,8 @@ import { GameContext } from '../context/GameContext';
 import Map from './Map';
 import Meeting from './Meeting';
 
-const SpaceWerewolf = ({ completeTask, callEmergencyMeeting }) => {
-    const { state } = useContext(GameContext);
+const SpaceWerewolf = ({ completeTask, callEmergencyMeeting, voteToEject }) => {
+    const { state, dispatch } = useContext(GameContext);
     const { playerLocations, tasks, userId, isMeetingActive } = state;
 
     const myLocation = playerLocations[userId];
@@ -20,8 +20,12 @@ const SpaceWerewolf = ({ completeTask, callEmergencyMeeting }) => {
         task.status === 'incomplete' && getDistance(myLocation, task.location) < 10
     );
 
+    const openTask = (task) => {
+        dispatch({ type: 'SET_ACTIVE_TASK', payload: task });
+    };
+
     if (isMeetingActive) {
-        return <Meeting />;
+        return <Meeting voteToEject={voteToEject} />;
     }
 
     return (
@@ -33,9 +37,9 @@ const SpaceWerewolf = ({ completeTask, callEmergencyMeeting }) => {
                 {nearbyTask && (
                     <button
                         className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg animate-pulse"
-                        onClick={() => completeTask(nearbyTask.id)}
+                        onClick={() => openTask(nearbyTask)}
                     >
-                        Complete Task: {nearbyTask.name}
+                        Use: {nearbyTask.name}
                     </button>
                 )}
                 <button

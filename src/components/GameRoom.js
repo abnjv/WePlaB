@@ -18,7 +18,7 @@ const GameRoom = (props) => {
             case 'draw_and_guess':
                 return <DrawAndGuess {...props} />;
             case 'space_werewolf':
-                return <SpaceWerewolf {...props} />;
+                return <SpaceWerewolf {...props} voteToEject={props.voteToEject} />;
             default:
                 return <div>Error: Unknown game type!</div>;
         }

@@ -9,6 +9,7 @@ export const initialState = {
     playerRoles: {}, // { [userId]: 'crewmate' | 'impostor' }
     tasks: [], // { id: string, location: { x, y }, status: 'incomplete' | 'complete' }[]
     isMeetingActive: false,
+    activeTask: null, // or a task object
 
     // Draw & Guess State
     gameType: 'who_is_the_spy', // 'who_is_the_spy', 'draw_and_guess', or 'space_werewolf'
@@ -163,6 +164,8 @@ export const gameReducer = (state, action) => {
             };
         case 'SET_MEETING_STATUS':
             return { ...state, isMeetingActive: action.payload };
+        case 'SET_ACTIVE_TASK':
+            return { ...state, activeTask: action.payload };
 
         default:
             return state;
