@@ -27,6 +27,8 @@ export const initialState = {
     // Firebase and user state
     db: null,
     auth: null,
+    friends: [],
+    friendRequests: [],
     userId: null,
     userName: '',
     userAvatar: avatars[0],
@@ -166,6 +168,12 @@ export const gameReducer = (state, action) => {
             return { ...state, isMeetingActive: action.payload };
         case 'SET_ACTIVE_TASK':
             return { ...state, activeTask: action.payload };
+
+        // Friends Actions
+        case 'SET_FRIENDS':
+            return { ...state, friends: action.payload };
+        case 'SET_FRIEND_REQUESTS':
+            return { ...state, friendRequests: action.payload };
 
         default:
             return state;
