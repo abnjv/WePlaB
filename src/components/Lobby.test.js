@@ -18,6 +18,6 @@ test('renders the lobby screen with the main title', () => {
   expect(titleElement).toBeInTheDocument();
 
   // Check if the "Create Public Room" button is there
-  const createButton = screen.getByText(/إنشاء غرفة عامة/i);
+  const createButton = screen.getByText(/Create Public Room/i);
   expect(createButton).toBeInTheDocument();
 });
