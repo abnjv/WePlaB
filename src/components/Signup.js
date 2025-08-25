@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
+import { GameContext } from '../context/GameContext';
 
-const Signup = ({ handleSignup, switchToLogin }) => {
+const Signup = () => {
+    const { handleSignup, dispatch } = useContext(GameContext);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [displayName, setDisplayName] = useState('');
@@ -12,10 +14,10 @@ const Signup = ({ handleSignup, switchToLogin }) => {
 
     return (
         <div className="w-full max-w-md p-8 space-y-6 bg-gray-800 rounded-lg shadow-lg">
-            <h2 className="text-2xl font-bold text-center text-white">إنشاء حساب جديد</h2>
+            <h2 className="text-2xl font-bold text-center text-white">Create a New Account</h2>
             <form className="space-y-6" onSubmit={handleSubmit}>
                 <div>
-                    <label className="block mb-2 text-sm font-medium text-gray-300">اسم العرض</label>
+                    <label className="block mb-2 text-sm font-medium text-gray-300">Display Name</label>
                     <input
                         type="text"
                         value={displayName}
@@ -25,7 +27,7 @@ const Signup = ({ handleSignup, switchToLogin }) => {
                     />
                 </div>
                 <div>
-                    <label className="block mb-2 text-sm font-medium text-gray-300">البريد الإلكتروني</label>
+                    <label className="block mb-2 text-sm font-medium text-gray-300">Email</label>
                     <input
                         type="email"
                         value={email}
@@ -35,7 +37,7 @@ const Signup = ({ handleSignup, switchToLogin }) => {
                     />
                 </div>
                 <div>
-                    <label className="block mb-2 text-sm font-medium text-gray-300">كلمة المرور</label>
+                    <label className="block mb-2 text-sm font-medium text-gray-300">Password</label>
                     <input
                         type="password"
                         value={password}
@@ -45,11 +47,11 @@ const Signup = ({ handleSignup, switchToLogin }) => {
                     />
                 </div>
                 <button type="submit" className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 rounded-lg text-white font-semibold">
-                    إنشاء حساب
+                    Sign Up
                 </button>
             </form>
             <p className="text-center text-gray-400">
-                لديك حساب بالفعل؟ <button onClick={switchToLogin} className="text-blue-400 hover:underline">سجل الدخول</button>
+                Already have an account? <button onClick={() => dispatch({ type: 'SET_AUTH_VIEW', payload: 'login' })} className="text-blue-400 hover:underline">Log in</button>
             </p>
         </div>
     );

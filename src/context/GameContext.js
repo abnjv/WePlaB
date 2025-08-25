@@ -1,5 +1,7 @@
 import React, { createContext, useReducer } from 'react';
-import { avatars } from '../App';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { doc, updateDoc, arrayUnion, arrayRemove, writeBatch, setDoc, serverTimestamp, addDoc, collection, getDoc, runTransaction } from 'firebase/firestore';
+import { avatars, words as spyWords, gameWords, drawAndGuessWords, spaceWerewolfTasks } from '../constants';
 
 export const GameContext = createContext();
 
@@ -9,6 +11,7 @@ export const initialState = {
     playerRoles: {}, // { [userId]: 'crewmate' | 'impostor' }
     tasks: [], // { id: string, location: { x, y }, status: 'incomplete' | 'complete' }[]
     isMeetingActive: false,
+    meetingInfo: null, // { reason: 'body_reported' | 'emergency_button', reporterId: 'some_user_id' }
     activeTask: null, // or a task object
 
     // Draw & Guess State
@@ -36,6 +39,10 @@ export const initialState = {
     errorMessage: '',
     isAuthReady: false,
 
+    // App navigation state
+    currentView: 'lobby', // 'lobby', 'profile', 'friends'
+    authView: 'signup', // 'login', 'signup'
+
     // Game state
     currentRoomId: '',
     roomList: [],
@@ -62,7 +69,9 @@ export const gameReducer = (state, action) => {
         case 'SET_FIREBASE_SERVICES':
             return { ...state, db: action.payload.db, auth: action.payload.auth };
         case 'SET_USER':
-            return { ...state, userId: action.payload.uid, userName: `اللاعب-${action.payload.uid.substring(0, 4)}`, userAvatar: avatars[Math.floor(Math.random() * avatars.length)] };
+            // Note: We are not setting user details like name/avatar here.
+            // That happens in the onAuthStateChanged listener in App.js which fetches from the 'users' doc.
+            return { ...state, userId: action.payload ? action.payload.uid : null };
         case 'SET_AUTH_READY':
             return { ...state, isAuthReady: true, loading: false };
         case 'SET_LOADING':
@@ -105,6 +114,12 @@ export const gameReducer = (state, action) => {
             return { ...state, currentRoomId: '', gameData: null, isHost: false, showWord: false, playerVote: null, spyGuessInput: '' };
         case 'SET_USER_DETAILS':
             return { ...state, userName: action.payload.name, userAvatar: action.payload.avatar };
+
+        // Navigation Actions
+        case 'SET_CURRENT_VIEW':
+            return { ...state, currentView: action.payload };
+        case 'SET_AUTH_VIEW':
+            return { ...state, authView: action.payload };
 
         // Voice Chat Actions
         case 'SET_PEER':
@@ -182,9 +197,289 @@ export const gameReducer = (state, action) => {
 
 export const GameProvider = ({ children }) => {
     const [state, dispatch] = useReducer(gameReducer, initialState);
+    const { db, userId, userName, userAvatar } = state;
+
+    // Friends System Logic
+    const sendFriendRequest = async (targetId) => {
+        if (!db || !userId || !targetId || userId === targetId) return;
+        const targetUserRef = doc(db, 'users', targetId);
+        const request = { from: userId, name: userName, avatar: userAvatar };
+        await updateDoc(targetUserRef, { friendRequests: arrayUnion(request) });
+    };
+
+    const acceptFriendRequest = async (request) => {
+        if (!db || !userId) return;
+        const currentUserRef = doc(db, 'users', userId);
+        const requestorUserRef = doc(db, 'users', request.from);
+        const batch = writeBatch(db);
+        batch.update(currentUserRef, { friends: arrayUnion(request.from), friendRequests: arrayRemove(request) });
+        batch.update(requestorUserRef, { friends: arrayUnion(userId) });
+        await batch.commit();
+    };
+
+    const declineFriendRequest = async (request) => {
+        if (!db || !userId) return;
+        const currentUserRef = doc(db, 'users', userId);
+        await updateDoc(currentUserRef, { friendRequests: arrayRemove(request) });
+    };
+
+    const removeFriend = async (friendId) => {
+        if (!db || !userId) return;
+        const currentUserRef = doc(db, 'users', userId);
+        const friendUserRef = doc(db, 'users', friendId);
+        const batch = writeBatch(db);
+        batch.update(currentUserRef, { friends: arrayRemove(friendId) });
+        batch.update(friendUserRef, { friends: arrayRemove(userId) });
+        await batch.commit();
+    };
+
+    // Auth & Profile Logic
+    const handleSignup = async (email, password, displayName) => {
+        try {
+            const userCredential = await createUserWithEmailAndPassword(state.auth, email, password);
+            await createUserDocument(userCredential.user, displayName);
+        } catch (error) { dispatch({ type: 'SET_ERROR_MESSAGE', payload: error.message }); }
+    };
+
+    const handleLogin = async (email, password) => {
+        try {
+            await signInWithEmailAndPassword(state.auth, email, password);
+        } catch (error) { dispatch({ type: 'SET_ERROR_MESSAGE', payload: error.message }); }
+    };
+
+    const handleLogout = async () => {
+        try {
+            await signOut(state.auth);
+            dispatch({ type: 'LEAVE_ROOM' });
+            dispatch({ type: 'SET_CURRENT_VIEW', payload: 'lobby' });
+        } catch (error) { dispatch({ type: 'SET_ERROR_MESSAGE', payload: error.message }); }
+    };
+
+    const createUserDocument = async (user, displayName) => {
+        const userDocRef = doc(db, 'users', user.uid);
+        await setDoc(userDocRef, {
+            uid: user.uid, email: user.email, displayName,
+            avatar: avatars[Math.floor(Math.random() * avatars.length)],
+            createdAt: serverTimestamp(), friends: [], friendRequests: []
+        });
+    };
+
+    const handleUpdateProfile = async (newName, newAvatar) => {
+        if (!db || !userId) return;
+        const userDocRef = doc(db, 'users', userId);
+        try {
+            await updateDoc(userDocRef, { displayName: newName, avatar: newAvatar });
+            dispatch({ type: 'SET_USER_DETAILS', payload: { name: newName, avatar: newAvatar } });
+            dispatch({ type: 'SET_CURRENT_VIEW', payload: 'lobby' });
+        } catch (error) { dispatch({ type: 'SET_ERROR_MESSAGE', payload: "Failed to update profile." }); }
+    };
+
+    // Game Management Logic
+    const createGame = async (gameType, isPublic = true) => {
+        if (!db || !userId || !userName) return;
+        try {
+            const roomRef = await addDoc(collection(db, 'rooms'), {
+                gameType,
+                isPublic,
+                hostId: userId,
+                createdAt: serverTimestamp(),
+                players: [{ id: userId, name: userName, avatar: userAvatar, isHost: true }],
+                gameData: { status: 'waiting' },
+            });
+            dispatch({ type: 'SET_CURRENT_ROOM_ID', payload: roomRef.id });
+        } catch (error) {
+            dispatch({ type: 'SET_ERROR_MESSAGE', payload: 'Error creating room.' });
+            console.error("Error creating room: ", error);
+        }
+    };
+
+    const joinGame = async (roomId) => {
+        if (!db || !userId || !userName) return;
+        const roomRef = doc(db, 'rooms', roomId);
+        try {
+            await runTransaction(db, async (transaction) => {
+                const roomDoc = await transaction.get(roomRef);
+                if (!roomDoc.exists()) {
+                    throw new Error("Room does not exist!");
+                }
+
+                const data = roomDoc.data();
+                if (data.players.length >= 8) {
+                    throw new Error("Room is full!");
+                }
+
+                if (data.players.some(p => p.id === userId)) {
+                    // Player is already in the room, just let them enter
+                    dispatch({ type: 'SET_CURRENT_ROOM_ID', payload: roomId });
+                    return;
+                }
+
+                const newPlayer = { id: userId, name: userName, avatar: userAvatar, isHost: false };
+                transaction.update(roomRef, { players: arrayUnion(newPlayer) });
+            });
+
+            dispatch({ type: 'SET_CURRENT_ROOM_ID', payload: roomId });
+            console.log("Transaction successfully committed!");
+
+        } catch (error) {
+            dispatch({ type: 'SET_ERROR_MESSAGE', payload: `Error joining room: ${error.message}` });
+            console.error("Error joining room: ", error);
+        }
+    };
+
+    const startGame = async (roomId, gameType, players) => {
+        if (!db) return;
+        const roomRef = doc(db, 'rooms', roomId);
+        let initialGameData = { status: 'in-progress' };
+
+        if (gameType === 'who_is_the_spy') {
+            const spyIndex = Math.floor(Math.random() * players.length);
+            const word = spyWords[Math.floor(Math.random() * spyWords.length)];
+            const spyWord = gameWords[word];
+            initialGameData = {
+                ...initialGameData,
+                word: word,
+                spyWord: spyWord,
+                votes: {},
+                playerRoles: Object.fromEntries(players.map((p, i) => [p.id, i === spyIndex ? 'spy' : 'citizen']))
+            };
+        } else if (gameType === 'draw_and_guess') {
+            const firstDrawer = players[Math.floor(Math.random() * players.length)].id;
+            const wordToDraw = drawAndGuessWords[Math.floor(Math.random() * drawAndGuessWords.length)];
+            initialGameData = {
+                ...initialGameData,
+                currentDrawerId: firstDrawer,
+                wordToDraw: wordToDraw,
+                drawingData: [],
+                guesses: [],
+                scores: Object.fromEntries(players.map(p => [p.id, 0])),
+            };
+        } else if (gameType === 'space_werewolf') {
+            const numImpostors = players.length < 7 ? 1 : 2;
+            const shuffledPlayers = [...players].sort(() => 0.5 - Math.random());
+            const impostorIds = shuffledPlayers.slice(0, numImpostors).map(p => p.id);
+
+            const playerRoles = {};
+            players.forEach(p => {
+                playerRoles[p.id] = impostorIds.includes(p.id) ? 'impostor' : 'crewmate';
+            });
+
+            const initialLocations = {};
+            players.forEach(p => {
+                initialLocations[p.id] = { x: 50, y: 15 }; // Start in Cafeteria
+            });
+
+            const playerStatus = {};
+            players.forEach(p => {
+                playerStatus[p.id] = 'alive';
+            });
+
+            const crewmateIds = players.filter(p => playerRoles[p.id] === 'crewmate').map(p => p.id);
+            const playerTasks = {};
+            crewmateIds.forEach(crewmateId => {
+                // Assign 2 random tasks to each crewmate
+                const shuffledTasks = [...spaceWerewolfTasks].sort(() => 0.5 - Math.random());
+                playerTasks[crewmateId] = shuffledTasks.slice(0, 2).map(task => ({ ...task, completed: false }));
+            });
+
+            initialGameData = {
+                ...initialGameData,
+                playerRoles: playerRoles,
+                playerLocations: initialLocations,
+                playerStatus: playerStatus,
+                playerTasks: playerTasks, // New field for per-player tasks
+                deadBodies: [],
+            };
+        }
+
+        try {
+            await updateDoc(roomRef, { gameData: initialGameData });
+        } catch (error) {
+            console.error("Error starting game: ", error);
+        }
+    };
+
+    const killPlayer = async (roomId, targetId) => {
+        if (!db || !state.gameData) return;
+        const roomRef = doc(db, 'rooms', roomId);
+        const { playerLocations, playerStatus } = state.gameData;
+
+        const newStatus = { ...playerStatus, [targetId]: 'dead' };
+        const deadBody = {
+            userId: targetId,
+            location: playerLocations[targetId],
+        };
+
+        try {
+            await updateDoc(roomRef, {
+                'gameData.playerStatus': newStatus,
+                'gameData.deadBodies': arrayUnion(deadBody)
+            });
+        } catch (error) {
+            console.error("Error killing player: ", error);
+        }
+    };
+
+    const callEmergencyMeeting = async (roomId, reporterId) => {
+        if (!db) return;
+        const roomRef = doc(db, 'rooms', roomId);
+        try {
+            await updateDoc(roomRef, {
+                'gameData.isMeetingActive': true,
+                'gameData.meetingInfo': {
+                    reason: 'emergency_button',
+                    reporterId: reporterId
+                }
+            });
+        } catch (error) {
+            console.error("Error calling meeting: ", error);
+        }
+    };
+
+    const reportBody = async (roomId, reporterId, body) => {
+        if (!db) return;
+        const roomRef = doc(db, 'rooms', roomId);
+
+        // Remove the reported body from the map
+        const updatedBodies = state.gameData.deadBodies.filter(b => b.userId !== body.userId);
+
+        try {
+            await updateDoc(roomRef, {
+                'gameData.isMeetingActive': true,
+                'gameData.meetingInfo': {
+                    reason: 'body_reported',
+                    reporterId: reporterId,
+                    victimId: body.userId
+                },
+                'gameData.deadBodies': updatedBodies
+            });
+        } catch (error) {
+            console.error("Error reporting body: ", error);
+        }
+    };
+
+
+    const contextValue = {
+        state,
+        dispatch,
+        sendFriendRequest,
+        acceptFriendRequest,
+        declineFriendRequest,
+        removeFriend,
+        handleSignup,
+        handleLogin,
+        handleLogout,
+        handleUpdateProfile,
+        createGame,
+        joinGame,
+        startGame,
+        killPlayer,
+        callEmergencyMeeting,
+        reportBody
+    };
 
     return (
-        <GameContext.Provider value={{ state, dispatch }}>
+        <GameContext.Provider value={contextValue}>
             {children}
         </GameContext.Provider>
     );

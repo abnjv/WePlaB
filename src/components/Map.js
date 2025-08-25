@@ -2,7 +2,7 @@ import React, { useContext } from 'react';
 import { GameContext } from '../context/GameContext';
 import Player from './Player';
 import Task from './Task';
-import { spaceWerewolfTasks } from '../App'; // Import tasks to display them
+import { spaceWerewolfTasks } from '../constants'; // Import tasks to display them
 
 const Room = ({ name, className, children }) => (
     <div className={`border-2 border-gray-500 rounded-lg flex items-center justify-center relative ${className}`}>
@@ -17,16 +17,14 @@ const Hallway = ({ className }) => (
 
 const Map = () => {
     const { state } = useContext(GameContext);
-    const { playerLocations, gameData } = state;
+    const { playerLocations, gameData, userId } = state;
 
     if (!gameData || !playerLocations) {
         return <div>Loading Map...</div>;
     }
 
-    // Filter tasks to only those assigned in the current game
-    const currentTasks = spaceWerewolfTasks.filter(task =>
-        Object.values(gameData.playerTasks || {}).flat().some(playerTask => playerTask.id === task.id)
-    );
+    const myRole = gameData.playerRoles ? gameData.playerRoles[userId] : null;
+    const myTasks = (myRole === 'crewmate' && gameData.playerTasks) ? gameData.playerTasks[userId] : [];
 
     return (
         <div className="w-full h-full bg-gray-900 rounded-lg relative overflow-hidden grid grid-cols-3 grid-rows-3 gap-2 p-2">
@@ -45,13 +43,32 @@ const Map = () => {
 
             {/* Absolute container for tasks and players */}
             <div className="absolute top-0 left-0 w-full h-full">
-                {/* Render tasks */}
-                {currentTasks.map(task => (
-                    <Task key={task.id} task={task} />
+                {/* Render player's tasks */}
+                {myTasks && myTasks.map(task => (
+                    <Task key={task.id} task={task} isPlayerTask={true} />
+                ))}
+
+                {/* Render dead bodies */}
+                {gameData.deadBodies && gameData.deadBodies.map((body, index) => (
+                    <div
+                        key={`body-${index}`}
+                        className="absolute text-4xl"
+                        style={{
+                            left: `${body.location.x}%`,
+                            top: `${body.location.y}%`,
+                            transform: 'translate(-50%, -50%)',
+                        }}
+                    >
+                        💀
+                    </div>
                 ))}
 
                 {/* Render players */}
                 {gameData.players.map(player => {
+                    // Don't render dead players
+                    if (gameData.playerStatus && gameData.playerStatus[player.id] === 'dead') {
+                        return null;
+                    }
                     const location = playerLocations[player.id];
                     if (!location) return null;
                     return <Player key={player.id} player={player} location={location} />;

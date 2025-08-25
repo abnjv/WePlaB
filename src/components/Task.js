@@ -1,7 +1,20 @@
 import React from 'react';
 
-const Task = ({ task }) => {
-    const isComplete = task.status === 'complete';
+const Task = ({ task, isPlayerTask }) => {
+    const isComplete = task.completed; // Use 'completed' from the playerTasks object
+
+    // Base classes
+    let classes = "w-8 h-8 rounded-md flex items-center justify-center";
+
+    if (isComplete) {
+        classes += " bg-green-500 opacity-50";
+    } else if (isPlayerTask) {
+        // Add a glowing effect for the player's own tasks
+        classes += " bg-yellow-500 border-2 border-yellow-300 shadow-lg shadow-yellow-500/50 animate-pulse";
+    } else {
+        // Style for other players' tasks if we were to show them
+        classes += " bg-gray-600";
+    }
 
     return (
         <div
@@ -12,7 +25,7 @@ const Task = ({ task }) => {
                 transform: 'translate(-50%, -50%)'
             }}
         >
-            <div className={`w-8 h-8 rounded-md flex items-center justify-center ${isComplete ? 'bg-green-500' : 'bg-yellow-500'}`}>
+            <div className={classes}>
                 <span className="text-xl">🔧</span>
             </div>
         </div>

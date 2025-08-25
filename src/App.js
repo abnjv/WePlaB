@@ -18,99 +18,19 @@ import Login from './components/Login';
 import Signup from './components/Signup';
 import Profile from './components/Profile';
 import Friends from './components/Friends';
+import { avatars } from './constants';
 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 
-export const gameWords = { 'مدينة': 'عاصمة', 'حيوان': 'طائر', 'فاكهة': 'خضروات', 'أداة': 'آلة', 'رياضة': 'هواية', 'مهنة': 'وظيفة', 'مشروب': 'سائل', 'فيلم': 'مسلسل', 'كوكب': 'قمر', 'لعبة': 'رياضة', 'عملة': 'بضاعة', 'طعام': 'بهار', 'مركبة': 'وسيلة نقل', 'معدن': 'عنصر', 'سلاح': 'دفاع' };
-export const words = Object.keys(gameWords);
-export const drawAndGuessWords = ['سيارة', 'شجرة', 'منزل', 'قطة', 'كلب', 'شمس', 'قمر', 'نجمة', 'كتاب', 'قلم', 'طاولة', 'كرسي', 'هاتف', 'حاسوب', 'مفتاح', 'باب', 'نافذة', 'ساعة', 'نظارة', 'كرة'];
-export const spaceWerewolfTasks = [ { id: 'task1', name: 'إصلاح الأسلاك', room: 'Engine Room', location: { x: 20, y: 85 } }, { id: 'task2', name: 'تنزيل البيانات', room: 'Cafeteria', location: { x: 50, y: 15 } }, { id: 'task3', name: 'تفعيل الدروع', room: 'Security', location: { x: 80, y: 85 } }, { id: 'task4', name: 'تفريغ القمامة', room: 'Cafeteria', location: { x: 60, y: 15 } }, { id: 'task5', name: 'فحص طبي', room: 'MedBay', location: { x: 80, y: 15 } }, ];
-export const avatars = ['😊', '😎', '🤩', '🥳', '🤓', '🤖', '👻', '👽', '👑'];
-const DISCUSSION_TIMER = 120;
-const VOTING_TIMER = 30;
-
 const App = () => {
-    const { state, dispatch } = useContext(GameContext);
+    const { state, dispatch, handleLogout } = useContext(GameContext);
     const {
-        db, auth, userId, userName, userAvatar, loading, errorMessage, currentRoomId,
-        gameData, isHost, playerLocations
+        db, auth, userId, userName, loading, errorMessage, currentRoomId,
+        currentView, authView
     } = state;
 
-    const [authView, setAuthView] = useState('signup');
-    const [currentView, setCurrentView] = useState('lobby');
-    const messagesEndRef = useRef(null);
-    const gameLogRef = useRef(null);
-
-    // AUTH & PROFILE
-    const handleSignup = async (email, password, displayName) => {
-        try {
-            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            await createUserDocument(userCredential.user, displayName);
-        } catch (error) { dispatch({ type: 'SET_ERROR_MESSAGE', payload: error.message }); }
-    };
-    const handleLogin = async (email, password) => {
-        try {
-            await signInWithEmailAndPassword(auth, email, password);
-        } catch (error) { dispatch({ type: 'SET_ERROR_MESSAGE', payload: error.message }); }
-    };
-    const handleLogout = async () => {
-        try {
-            await signOut(auth);
-            dispatch({ type: 'LEAVE_ROOM' });
-            setCurrentView('lobby');
-        } catch (error) { dispatch({ type: 'SET_ERROR_MESSAGE', payload: error.message }); }
-    };
-    const createUserDocument = async (user, displayName) => {
-        const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, {
-            uid: user.uid, email: user.email, displayName,
-            avatar: avatars[Math.floor(Math.random() * avatars.length)],
-            createdAt: serverTimestamp(), friends: [], friendRequests: []
-        });
-    };
-    const handleUpdateProfile = async (newName, newAvatar) => {
-        if (!db || !userId) return;
-        const userDocRef = doc(db, 'users', userId);
-        try {
-            await updateDoc(userDocRef, { displayName: newName, avatar: newAvatar });
-            dispatch({ type: 'SET_USER_DETAILS', payload: { name: newName, avatar: newAvatar } });
-            setCurrentView('lobby');
-        } catch (error) { dispatch({ type: 'SET_ERROR_MESSAGE', payload: "Failed to update profile." }); }
-    };
-
-    // FRIENDS SYSTEM
-    const sendFriendRequest = async (targetId) => {
-        if (!db || !userId || !targetId || userId === targetId) return;
-        const targetUserRef = doc(db, 'users', targetId);
-        const request = { from: userId, name: userName, avatar: userAvatar };
-        await updateDoc(targetUserRef, { friendRequests: arrayUnion(request) });
-    };
-    const acceptFriendRequest = async (request) => {
-        if (!db || !userId) return;
-        const currentUserRef = doc(db, 'users', userId);
-        const requestorUserRef = doc(db, 'users', request.from);
-        const batch = writeBatch(db);
-        batch.update(currentUserRef, { friends: arrayUnion(request.from), friendRequests: arrayRemove(request) });
-        batch.update(requestorUserRef, { friends: arrayUnion(userId) });
-        await batch.commit();
-    };
-    const declineFriendRequest = async (request) => {
-        if (!db || !userId) return;
-        const currentUserRef = doc(db, 'users', userId);
-        await updateDoc(currentUserRef, { friendRequests: arrayRemove(request) });
-    };
-    const removeFriend = async (friendId) => {
-        if (!db || !userId) return;
-        const currentUserRef = doc(db, 'users', userId);
-        const friendUserRef = doc(db, 'users', friendId);
-        const batch = writeBatch(db);
-        batch.update(currentUserRef, { friends: arrayRemove(friendId) });
-        batch.update(friendUserRef, { friends: arrayRemove(userId) });
-        await batch.commit();
-    };
-
-    // LISTENERS & Game Logic
+    // LISTENERS
     useEffect(() => {
         const app = initializeApp(firebaseConfig);
         const authService = getAuth(app);
@@ -150,7 +70,34 @@ const App = () => {
         return () => unsubscribe();
     }, [userId, db, dispatch]);
 
-    // ... all other game logic from previous versions ...
+    // Room listener
+    useEffect(() => {
+        if (!db || !currentRoomId || !userId) return;
+
+        const roomRef = doc(db, 'rooms', currentRoomId);
+        const unsubscribe = onSnapshot(roomRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const roomData = docSnap.data();
+                // Check if player is still in the room's player list
+                if (!roomData.players.some(p => p.id === userId)) {
+                    // We've been kicked or have left, so exit the room view
+                    dispatch({ type: 'LEAVE_ROOM' });
+                    // Optionally, show a message
+                    dispatch({ type: 'SET_ERROR_MESSAGE', payload: 'You have been removed from the room.' });
+                } else {
+                    // This is where we receive real-time game state updates
+                    dispatch({ type: 'SET_GAME_DATA', payload: roomData });
+                }
+            } else {
+                // Room has been deleted
+                dispatch({ type: 'LEAVE_ROOM' });
+                dispatch({ type: 'SET_ERROR_MESSAGE', payload: 'The room has been closed.' });
+            }
+        });
+
+        return () => unsubscribe();
+
+    }, [db, currentRoomId, userId, dispatch]);
 
     // RENDER LOGIC
     if (loading) {
@@ -161,7 +108,7 @@ const App = () => {
         return (
             <main className="h-screen bg-gray-900 text-gray-200 font-sans flex items-center justify-center p-4">
                 {errorMessage && <p className="text-red-500">{errorMessage}</p>}
-                {authView === 'login' ? <Login handleLogin={handleLogin} switchToSignup={() => setAuthView('signup')} /> : <Signup handleSignup={handleSignup} switchToLogin={() => setAuthView('login')} />}
+                {authView === 'login' ? <Login /> : <Signup />}
             </main>
         );
     }
@@ -172,11 +119,12 @@ const App = () => {
         }
         switch (currentView) {
             case 'profile':
-                return <Profile handleUpdateProfile={handleUpdateProfile} switchToLobby={() => setCurrentView('lobby')} switchToFriends={() => setCurrentView('friends')} />;
+                return <Profile />;
             case 'friends':
-                return <Friends switchToProfile={() => setCurrentView('profile')} sendFriendRequest={sendFriendRequest} acceptFriendRequest={acceptFriendRequest} declineFriendRequest={declineFriendRequest} removeFriend={removeFriend} />;
+                return <Friends switchToProfile={() => dispatch({ type: 'SET_CURRENT_VIEW', payload: 'profile' })} />;
             default:
-                return <Lobby createGame={()=>{}} joinGame={()=>{}} switchToProfile={() => setCurrentView('profile')} />;
+                // createGame and joinGame are now in context, so Lobby can access them directly
+                return <Lobby switchToProfile={() => dispatch({ type: 'SET_CURRENT_VIEW', payload: 'profile' })} />;
         }
     };
 
@@ -186,7 +134,7 @@ const App = () => {
             {currentRoomId && <VoiceChat />}
             <div className="absolute top-4 right-4 z-50 flex items-center space-x-4">
                 <span className="text-white">Welcome, {userName}</span>
-                <button onClick={() => setCurrentView('profile')}>Profile</button>
+                <button onClick={() => dispatch({ type: 'SET_CURRENT_VIEW', payload: 'profile' })}>Profile</button>
                 <button onClick={handleLogout}>Logout</button>
             </div>
             <div className="h-full w-full flex items-center justify-center p-4 pt-20">
