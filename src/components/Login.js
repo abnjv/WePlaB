@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
+import { GameContext } from '../context/GameContext';
 
-const Login = ({ handleLogin, switchToSignup }) => {
+const Login = () => {
+    const { handleLogin, dispatch } = useContext(GameContext);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
 
@@ -11,10 +13,10 @@ const Login = ({ handleLogin, switchToSignup }) => {
 
     return (
         <div className="w-full max-w-md p-8 space-y-6 bg-gray-800 rounded-lg shadow-lg">
-            <h2 className="text-2xl font-bold text-center text-white">تسجيل الدخول</h2>
+            <h2 className="text-2xl font-bold text-center text-white">Login</h2>
             <form className="space-y-6" onSubmit={handleSubmit}>
                 <div>
-                    <label className="block mb-2 text-sm font-medium text-gray-300">البريد الإلكتروني</label>
+                    <label className="block mb-2 text-sm font-medium text-gray-300">Email</label>
                     <input
                         type="email"
                         value={email}
@@ -24,7 +26,7 @@ const Login = ({ handleLogin, switchToSignup }) => {
                     />
                 </div>
                 <div>
-                    <label className="block mb-2 text-sm font-medium text-gray-300">كلمة المرور</label>
+                    <label className="block mb-2 text-sm font-medium text-gray-300">Password</label>
                     <input
                         type="password"
                         value={password}
@@ -34,11 +36,11 @@ const Login = ({ handleLogin, switchToSignup }) => {
                     />
                 </div>
                 <button type="submit" className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 rounded-lg text-white font-semibold">
-                    دخول
+                    Login
                 </button>
             </form>
             <p className="text-center text-gray-400">
-                ليس لديك حساب؟ <button onClick={switchToSignup} className="text-blue-400 hover:underline">أنشئ حساباً جديداً</button>
+                Don't have an account? <button onClick={() => dispatch({ type: 'SET_AUTH_VIEW', payload: 'signup' })} className="text-blue-400 hover:underline">Sign up</button>
             </p>
         </div>
     );
